@@ -152,32 +152,13 @@ class CableDrivenKinematics:
             self.limits[axis] = rail.get_range()
     
     def clear_homing_state(self, clear_axes):
-        for axis, axis_name in enumerate("xyz"):
-            if axis_name in clear_axes:
-                self.limits[axis] = (1.0, -1.0)
+        pass
                 
     def home_axis(self, homing_state, axis, rail):
-        # Determine movement
-        position_min, position_max = rail.get_range()
-        hi = rail.get_homing_info()
-        homepos = [None, None, None, None]
-        homepos[axis] = hi.position_endstop
-        forcepos = list(homepos)
-        if hi.positive_dir:
-            forcepos[axis] -= 1.5 * (hi.position_endstop - position_min)
-        else:
-            forcepos[axis] += 1.5 * (position_max - hi.position_endstop)
-        # Perform homing
-        homing_state.home_rails([rail], forcepos, homepos)
+       pass
         
     def home(self, homing_state):
-        # For cable-driven robots, homing is typically done by tensioning cables
-        # Each axis is homed independently and in order
-        for axis in homing_state.get_axes():
-            if self.dc_module is not None and axis == self.dual_carriage_axis:
-                self.dc_module.home(homing_state)
-            else:
-                self.home_axis(homing_state, axis, self.rails[axis])
+        pass
                 
     def _check_endstops(self, move):
         end_pos = move.end_pos
