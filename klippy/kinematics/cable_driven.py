@@ -125,7 +125,7 @@ class CableDrivenKinematics:
         if l <= h:
             self.limits[i] = range
     
-    def set_position(self, newpos, homing_axes):
+    def set_position(self, newpos):
         """Override position setting with cable-driven kinematics"""
         # First calculate cable lengths for the new position
         cable_lengths, motor_steps = self.calculate_cable_lengths(newpos)
@@ -142,14 +142,7 @@ class CableDrivenKinematics:
                 # For now, we'll keep this as a placeholder
                 pass
         
-        # Handle homing axes
-        for axis_name in homing_axes:
-            axis = "xyz".index(axis_name)
-            if self.dc_module and axis == self.dc_module.axis:
-                rail = self.dc_module.get_primary_rail().get_rail()
-            else:
-                rail = self.rails[axis]
-            self.limits[axis] = rail.get_range()
+      
     
     def clear_homing_state(self, clear_axes):
         pass
