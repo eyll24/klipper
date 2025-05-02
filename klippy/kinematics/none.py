@@ -12,7 +12,7 @@ from . import idex_modes
 class CableKinematics:
     def __init__(self, toolhead, config):
         self.printer = config.get_printer()
-        self.name = config.get_name()
+    
         
         # Cable robot specific parameters
         self.cable_base_length = config.getfloat('cable_base_length', 1.0)
