@@ -13,23 +13,23 @@ class ModifiedWinchKinematics:
         self.steppers = []
         self.anchors = []
         self.end_effector_offsets = []
-        self.cable_length_0 = config.getfloat('cable_length_0', 1.0)  # Initial cable length default
-        self.cable_length1_0 = config.getfloat('cable_length1_0', 0.78)  # Secondary initial cable length
+        self.cable_length_0 = config.getfloat('cable_length_0', 1000.0)  # Initial cable length default in mm
+        self.cable_length1_0 = config.getfloat('cable_length1_0', 780.0)  # Secondary initial cable length in mm
         
         # Define 4 anchors (including dummy cable anchor)
         anchor_points = [
             (0.0, 0.0, 0.0),             # Dummy cable anchor
-            (0.0, 0.438, 0.0),           # Stepper A anchor
-            (-0.379, -0.219, 0.0),       # Stepper B anchor
-            (0.379, -0.219, 0.0)         # Stepper C anchor
+            (0.0, 438.0, 0.0),           # Stepper A anchor (converted to mm)
+            (-379.0, -219.0, 0.0),       # Stepper B anchor (converted to mm)
+            (379.0, -219.0, 0.0)         # Stepper C anchor (converted to mm)
         ]
         
         # Define end-effector offsets
         self.end_effector_offsets = [
             (0.0, 0.0, -self.cable_length1_0),           # Dummy cable attachment
-            (0.0, 0.01588, -self.cable_length1_0),       # Cable to stepper A attachment
-            (-0.01375, -0.00794, -self.cable_length1_0),  # Cable to stepper B attachment
-            (0.01375, -0.00794, -self.cable_length1_0)   # Cable to stepper C attachment
+            (0.0, 15.88, -self.cable_length1_0),         # Cable to stepper A attachment (converted to mm)
+            (-13.75, -7.94, -self.cable_length1_0),      # Cable to stepper B attachment (converted to mm)
+            (13.75, -7.94, -self.cable_length1_0)        # Cable to stepper C attachment (converted to mm)
         ]
         
         # Set up steppers (only 3 real steppers)
@@ -44,8 +44,8 @@ class ModifiedWinchKinematics:
             a = anchor_points[i+1]  # Skip the dummy anchor
             self.anchors.append(a)
             
-            # Drum radius and rotation distance from MATLAB
-            drum_radius = 31.96
+            # Drum radius and rotation distance from MATLAB (converted to mm)
+            drum_radius = 31.96 * 1000  # Drum radius in mm
             rotation_distance = 2 * math.pi * drum_radius
             
             # Update the rotation distance in config
