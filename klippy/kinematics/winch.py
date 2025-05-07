@@ -7,7 +7,7 @@
 import stepper, mathutil
 import math
 
-class ModifiedWinchKinematics:
+class WinchKinematics:
     def __init__(self, toolhead, config):
         # Setup steppers at each anchor (3 actual motors)
         self.steppers = []
@@ -161,4 +161,4 @@ class ModifiedWinchKinematics:
         }
 
 def load_kinematics(toolhead, config):
-    return ModifiedWinchKinematics(toolhead, config)
+    return WinchKinematics(toolhead, config)
