@@ -40,18 +40,22 @@ class WinchKinematics:
             s = stepper.PrinterStepper(stepper_config)
             self.steppers.append(s)
             
-            # Anchor points are taken from MATLAB code, not from config
-            a = anchor_points[i+1]  # Skip the dummy anchor
+            # Get anchor points from config now
+            anchor_x = stepper_config.getfloat('anchor_x')
+            anchor_y = stepper_config.getfloat('anchor_y')
+            anchor_z = stepper_config.getfloat('anchor_z', 0.)
+            a = (anchor_x, anchor_y, anchor_z)
             self.anchors.append(a)
             
-            # Drum radius and rotation distance from MATLAB (converted to mm)
-            drum_radius = 31.96 * 1000  # Drum radius in mm
-            rotation_distance = 2 * math.pi * drum_radius
+            # Get rotation_distance from config
+            rotation_distance = stepper_config.getfloat('rotation_distance')
             
-            # Update the rotation distance in config
+            # CRITICAL: Setup itersolve BEFORE setting rotation distance
+            s.setup_itersolve('winch_stepper_alloc', *a)
+            
+            # Now safe to set rotation distance
             s.set_rotation_distance(rotation_distance)
             
-            s.setup_itersolve('winch_stepper_alloc', *a)
             s.set_trapq(toolhead.get_trapq())
             toolhead.register_step_generator(s.generate_steps)
         
@@ -59,7 +63,7 @@ class WinchKinematics:
         self.dummy_anchor = anchor_points[0]
         
         # Store anchor data as full 4-cable system
-        self.full_anchors = anchor_points
+        self.full_anchors = [self.dummy_anchor] + self.anchors
         
         # Setup boundary checks
         acoords = list(zip(*self.anchors))
@@ -76,12 +80,17 @@ class WinchKinematics:
         cable_lengths = []
         
         for i in range(4):
+            if i == 0:
+                # Dummy cable - use constant length
+                cable_lengths.append(self.cable_length_0)
+                continue
+                
             bx, by, bz = self.full_anchors[i]
             qx, qy, qz = self.end_effector_offsets[i]
             
-            # Cable vectors (from MATLAB code)
-            lx = x - bx + qx * math.cos(0)
-            ly = y - by + qy * math.cos(0)
+            # Cable vectors
+            lx = x - bx + qx
+            ly = y - by + qy
             lz = z - bz + qz
             
             length = math.sqrt(lx*lx + ly*ly + lz*lz)
@@ -96,29 +105,22 @@ class WinchKinematics:
         cable_lengths = []
         
         # Calculate the lengths of the 3 actual cables (from stepper positions)
-        for i, stepper in enumerate(self.steppers):
+        for i, s in enumerate(self.steppers):
             # Convert stepper position to cable length
-            pos = stepper_positions[stepper.get_name()]
+            pos = stepper_positions[s.get_name()]
             cable_length = self.cable_length_0 + pos  # Add initial cable length
             cable_lengths.append(cable_length)
         
-        # Prepend dummy cable length as placeholder
-        dummy_length = self.cable_length_0  # Constant dummy cable length
-        cable_lengths = [dummy_length] + cable_lengths
-        
         # Try to solve the forward kinematics using optimization
         # This is a simplified approach since the full forward kinematics would require
-        # a numerical solver or an analytical solution specific to this 4-cable system
+        # a numerical solver or an analytical solution specific to this system
         current_pos = [0., 0., 0.]  # Initial guess
         
-        # Here we'd ideally implement a proper forward kinematics solver
-        # For now, we'll use a simple approximation based on the 3 actual cables
+        # Use the trilateration function for the 3 real anchors and cable lengths
         try:
-            # Use the trilateration function for the 3 real anchors and cable lengths
-            # This is not perfect but serves as a starting point
             current_pos = mathutil.trilateration(
                 self.anchors, 
-                [(cl * cl) for cl in cable_lengths[1:4]]
+                [(cl * cl) for cl in cable_lengths]
             )
         except:
             # Fallback to last known position if trilateration fails
@@ -131,27 +133,30 @@ class WinchKinematics:
         # Calculate all 4 cable lengths for this position
         cable_lengths = self.calc_cable_lengths(newpos)
         
-        # Calculate delta from initial cable lengths
-        delta_lengths = [l - self.cable_length_0 for l in cable_lengths]
-        
         # Set positions for the 3 actual steppers (skip dummy cable)
-        for i, stepper in enumerate(self.steppers):
+        for i, s in enumerate(self.steppers):
             # Use the appropriate delta length (skipping the dummy cable)
-            stepper.set_position(delta_lengths[i+1])
-    
-    def clear_homing_state(self, clear_axes):
-        # Homing functionality to be implemented
-        pass
+            delta_length = cable_lengths[i+1] - self.cable_length_0
+            s.set_position(delta_length)
     
     def home(self, homing_state):
-        # Basic homing implementation
+        # Minimal homing implementation - no actual homing movement
+        # Just marks the axes as homed at current position
         homing_state.set_axes([0, 1, 2])
         homing_state.set_homed_position([0., 0., 0.])
+        
+    def check_homing_move(self, homing_state):
+        # This function prevents actual homing moves
+        pass
     
     def check_move(self, move):
-        # Implement boundary checks and speed limits
-        # For now, a basic check is implemented
-        pass
+        # Basic check to ensure moves stay within bounds
+        end_pos = move.end_pos
+        for i in range(3):
+            if end_pos[i] < self.axes_min[i] or end_pos[i] > self.axes_max[i]:
+                raise self.printer.command_error(
+                    "Move out of bounds: %.3f %.3f %.3f" % 
+                    (end_pos[0], end_pos[1], end_pos[2]))
     
     def get_status(self, eventtime):
         return {
