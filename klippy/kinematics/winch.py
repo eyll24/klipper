@@ -51,7 +51,7 @@ class WinchKinematics:
             rotation_distance = stepper_config.getfloat('rotation_distance')
             
             # CRITICAL: Setup itersolve BEFORE setting rotation distance
-            s.setup_itersolve('winch_stepper_alloc', *a)
+            s.setup_itersolve('winch_stepper_alloc', a[0], a[1], a[2])
             
             # Now safe to set rotation distance
             s.set_rotation_distance(rotation_distance)
@@ -137,7 +137,7 @@ class WinchKinematics:
         for i, s in enumerate(self.steppers):
             # Use the appropriate delta length (skipping the dummy cable)
             delta_length = cable_lengths[i+1] - self.cable_length_0
-            s.set_position(delta_length)
+            s.set_position([delta_length, 0., 0.])
     
     def home(self, homing_state):
         # Minimal homing implementation - no actual homing movement
