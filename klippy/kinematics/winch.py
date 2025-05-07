@@ -9,20 +9,15 @@ import math
 
 class WinchKinematics:
     def __init__(self, toolhead, config):
+        self.printer = config.get_printer()
         # Setup steppers at each anchor (3 actual motors)
         self.steppers = []
         self.anchors = []
         self.end_effector_offsets = []
+        
+        # Get config parameters
         self.cable_length_0 = config.getfloat('cable_length_0', 1000.0)  # Initial cable length default in mm
         self.cable_length1_0 = config.getfloat('cable_length1_0', 780.0)  # Secondary initial cable length in mm
-        
-        # Define 4 anchors (including dummy cable anchor)
-        anchor_points = [
-            (0.0, 0.0, 0.0),             # Dummy cable anchor
-            (0.0, 438.0, 0.0),           # Stepper A anchor (converted to mm)
-            (-379.0, -219.0, 0.0),       # Stepper B anchor (converted to mm)
-            (379.0, -219.0, 0.0)         # Stepper C anchor (converted to mm)
-        ]
         
         # Define end-effector offsets
         self.end_effector_offsets = [
@@ -33,43 +28,25 @@ class WinchKinematics:
         ]
         
         # Set up steppers (only 3 real steppers)
-        stepper_names = ['a', 'b', 'c']
-        for i in range(3):
-            name = 'stepper_' + stepper_names[i]
-            stepper_config = config.getsection(name)
-            s = stepper.PrinterStepper(stepper_config)
-            self.steppers.append(s)
-            
-            # Get anchor points from config now
-            anchor_x = stepper_config.getfloat('anchor_x')
-            anchor_y = stepper_config.getfloat('anchor_y')
-            anchor_z = stepper_config.getfloat('anchor_z', 0.)
-            a = (anchor_x, anchor_y, anchor_z)
-            self.anchors.append(a)
-            
-            # Get rotation_distance from config
-            rotation_distance = stepper_config.getfloat('rotation_distance')
-            
-            # CRITICAL: Setup itersolve BEFORE setting rotation distance
-            s.setup_itersolve('winch_stepper_alloc', a[0], a[1], a[2])
-            
-            # Now safe to set rotation distance
-            s.set_rotation_distance(rotation_distance)
-            
-            s.set_trapq(toolhead.get_trapq())
-            toolhead.register_step_generator(s.generate_steps)
-        
-        # Store the dummy anchor as well
-        self.dummy_anchor = anchor_points[0]
+        self.rails = []
+        for i, name in enumerate(['a', 'b', 'c']):
+            rail = WinchRail(self.printer, config, name)
+            self.rails.append(rail)
+            self.steppers.extend(rail.get_steppers())
+            self.anchors.append(rail.get_anchor())
+            rail.setup_itersolve()
+            rail.set_trapq(toolhead.get_trapq())
+            toolhead.register_step_generator(rail.generate_steps)
         
         # Store anchor data as full 4-cable system
+        self.dummy_anchor = (0.0, 0.0, 0.0)  # Dummy cable anchor
         self.full_anchors = [self.dummy_anchor] + self.anchors
         
         # Setup boundary checks
         acoords = list(zip(*self.anchors))
         self.axes_min = toolhead.Coord(*[min(a) - 0.1 for a in acoords], e=0.)
         self.axes_max = toolhead.Coord(*[max(a) + 0.1 for a in acoords], e=0.)
-        self.set_position([0., 0., 0.], "")
+        self.set_position([0., 0., 0.], ())
     
     def get_steppers(self):
         return list(self.steppers)
@@ -100,44 +77,32 @@ class WinchKinematics:
     
     def calc_position(self, stepper_positions):
         """Calculate cartesian position from stepper positions"""
-        # We need to convert stepper positions to cable lengths first
-        # We're only using the 3 real steppers (skipping dummy)
+        # This is only called during m114 and similar reporting
         cable_lengths = []
-        
-        # Calculate the lengths of the 3 actual cables (from stepper positions)
-        for i, s in enumerate(self.steppers):
-            # Convert stepper position to cable length
-            pos = stepper_positions[s.get_name()]
-            cable_length = self.cable_length_0 + pos  # Add initial cable length
+        for i, rail in enumerate(self.rails):
+            rail_pos = rail.get_commanded_position()
+            cable_length = self.cable_length_0 + rail_pos
             cable_lengths.append(cable_length)
         
-        # Try to solve the forward kinematics using optimization
-        # This is a simplified approach since the full forward kinematics would require
-        # a numerical solver or an analytical solution specific to this system
-        current_pos = [0., 0., 0.]  # Initial guess
-        
-        # Use the trilateration function for the 3 real anchors and cable lengths
         try:
             current_pos = mathutil.trilateration(
                 self.anchors, 
                 [(cl * cl) for cl in cable_lengths]
             )
+            return current_pos
         except:
-            # Fallback to last known position if trilateration fails
-            pass
-            
-        return current_pos
+            # Fallback to origin if trilateration fails
+            return [0., 0., 0.]
     
     def set_position(self, newpos, homing_axes):
         """Set the position of the toolhead"""
         # Calculate all 4 cable lengths for this position
         cable_lengths = self.calc_cable_lengths(newpos)
         
-        # Set positions for the 3 actual steppers (skip dummy cable)
-        for i, s in enumerate(self.steppers):
-            # Use the appropriate delta length (skipping the dummy cable)
+        # Set positions for the 3 actual rails (skip dummy cable)
+        for i, rail in enumerate(self.rails):
             delta_length = cable_lengths[i+1] - self.cable_length_0
-            s.set_position([delta_length, 0., 0.])
+            rail.set_position(delta_length)
     
     def home(self, homing_state):
         # Minimal homing implementation - no actual homing movement
@@ -145,12 +110,12 @@ class WinchKinematics:
         homing_state.set_axes([0, 1, 2])
         homing_state.set_homed_position([0., 0., 0.])
         
-    def check_homing_move(self, homing_state):
-        # This function prevents actual homing moves
-        pass
+    def check_home_position(self, homing_state):
+        # Prevent any homing moves
+        return True
     
     def check_move(self, move):
-        # Basic check to ensure moves stay within bounds
+        """Verify move stays in valid range"""
         end_pos = move.end_pos
         for i in range(3):
             if end_pos[i] < self.axes_min[i] or end_pos[i] > self.axes_max[i]:
@@ -164,6 +129,44 @@ class WinchKinematics:
             'axis_minimum': self.axes_min,
             'axis_maximum': self.axes_max,
         }
+
+# Helper class for single cable/rail
+class WinchRail:
+    def __init__(self, printer, config, name):
+        self.printer = printer
+        # Get stepper config
+        section = 'stepper_' + name
+        stepper_config = config.getsection(section)
+        # Get anchor position
+        self.anchor_x = stepper_config.getfloat('anchor_x')
+        self.anchor_y = stepper_config.getfloat('anchor_y')
+        self.anchor_z = stepper_config.getfloat('anchor_z', 0.)
+        self.anchor = (self.anchor_x, self.anchor_y, self.anchor_z)
+        # Create stepper
+        self.stepper = stepper.PrinterStepper(stepper_config)
+        
+    def get_anchor(self):
+        return self.anchor
+        
+    def get_steppers(self):
+        return [self.stepper]
+    
+    def setup_itersolve(self):
+        self.stepper.setup_itersolve('winch_stepper_alloc', 
+                                    self.anchor_x, self.anchor_y, self.anchor_z)
+    
+    def set_trapq(self, trapq):
+        self.stepper.set_trapq(trapq)
+    
+    def generate_steps(self, start_time, move_time):
+        return self.stepper.generate_steps(start_time, move_time)
+    
+    def set_position(self, pos):
+        # Convert to array format for stepper API
+        self.stepper.set_position([pos, 0., 0.])
+    
+    def get_commanded_position(self):
+        return self.stepper.get_commanded_position()
 
 def load_kinematics(toolhead, config):
     return WinchKinematics(toolhead, config)
