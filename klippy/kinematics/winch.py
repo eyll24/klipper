@@ -10,6 +10,7 @@ class WinchKinematics:
         # Setup steppers at each anchor
         self.steppers = []
         self.anchors = []
+        self.offsets = []
         for i in range(26):
             name = 'stepper_' + chr(ord('a') + i)
             if i >= 3 and not config.has_section(name):
@@ -27,12 +28,22 @@ class WinchKinematics:
         self.axes_min = toolhead.Coord(*[min(a) for a in acoords], e=0.)
         self.axes_max = toolhead.Coord(*[max(a) for a in acoords], e=0.)
         self.set_position([0., 0., 0.], "")
+        for i in range(len(self.anchors)):
+            qx = stepper_config.getfloat("offset_x", default=0.0)
+            qy = stepper_config.getfloat("offset_y", default=0.0)
+            qz = stepper_config.getfloat("offset_z", default=0.0)
+            self.offsets.append((qx, qy, qz))
     def get_steppers(self):
         return list(self.steppers)
     def calc_position(self, stepper_positions):
-        # Use only first three steppers to calculate cartesian position
+        # Get cable lengths (not squared yet)
         pos = [stepper_positions[rail.get_name()] for rail in self.steppers[:3]]
-        return mathutil.trilateration(self.anchors[:3], [sp*sp for sp in pos])
+        # Apply anchor position offsets: A_i + q_i
+        effective_anchors = [
+            (a[0] + q[0], a[1] + q[1], a[2] + q[2])
+            for a, q in zip(self.anchors[:3], self.offsets[:3]) ]
+        # Forward kinematics: solve for P such that ||P - (A_i + q_i)|| = L_i
+        return mathutil.trilateration(effective_anchors, [p * p for p in pos])
     def set_position(self, newpos, homing_axes):
         for s in self.steppers:
             s.set_position(newpos)
