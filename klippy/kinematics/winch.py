@@ -29,9 +29,9 @@ class WinchKinematics:
             qz = stepper_config.getfloat("offset_z", default=0.0)
             self.offsets.append((qx, qy, qz))
         # Setup boundary checks
-        acoords = list(zip(*self.anchors))
-        self.axes_min = toolhead.Coord(-1e6, -1e6, -1e6, e=0.)
-        self.axes_max = toolhead.Coord(+1e6, +1e6, +1e6, e=0.)
+        #acoords = list(zip(*self.anchors))
+        #self.axes_min = toolhead.Coord(-1e6, -1e6, -1e6, e=0.)
+        #self.axes_max = toolhead.Coord(+1e6, +1e6, +1e6, e=0.)
         self.set_position([0., 0., 0.], "")
         
     def get_steppers(self):
@@ -68,8 +68,8 @@ class WinchKinematics:
         # XXX - homed_checks and rail limits not implemented
         return {
             'homed_axes': 'xyz',
-            'axis_minimum': self.axes_min,
-            'axis_maximum': self.axes_max,
+            #'axis_minimum': self.axes_min,
+            #'axis_maximum': self.axes_max,
         }
 
 def load_kinematics(toolhead, config):
